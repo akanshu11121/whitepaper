@@ -1,5 +1,9 @@
 # Deployment and operations
 
+For Netlify-only hosting, follow [`NETLIFY.md`](../NETLIFY.md). Netlify serves the
+frontend; it does not execute the Python/PyTorch backend. The default site is a
+standalone browser lab, while the full API is an optional separately hosted service.
+
 ## Local production-shaped run
 
 ```bash

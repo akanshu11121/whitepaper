@@ -1,10 +1,25 @@
 [build]
   base = "frontend"
-  command = "npm install --include=dev && npm run build"
+  command = "npm ci --include=dev && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
+  # Production defaults to the standalone browser lab. An HTTPS VITE_API_URL
+  # can opt into a separately hosted FastAPI service.
+  VITE_LAB_MODE = "browser"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
 
 # Single-page app: serve index.html for any unknown path
 [[redirects]]
