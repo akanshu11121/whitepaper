@@ -3,7 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {"dev": "vite", "build": "tsc -b && vite build", "test": "vitest run"},
+  "scripts": {
+    "content": "node scripts/export-content.mjs",
+    "predev": "npm run content",
+    "dev": "vite",
+    "prebuild": "npm run content",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "pretest": "npm run content",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src scripts tests *.ts *.json index.html"
+  },
   "dependencies": {"@vitejs/plugin-react": "latest", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "latest"},
-  "devDependencies": {"vitest": "latest", "jsdom": "latest", "@types/react": "latest", "@types/react-dom": "latest"}
+  "devDependencies": {"vitest": "latest", "jsdom": "latest", "@types/react": "latest", "@types/react-dom": "latest", "yaml": "^2.8.1", "@playwright/test": "^1.58.2", "prettier": "^3.6.2"},
+  "engines": {"node": ">=22.12"}
 }

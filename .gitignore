@@ -12,6 +12,11 @@ frontend/playwright-report/
 frontend/*.tsbuildinfo
 runs/
 .env
+.env.*
+!.env.example
+.netlify/
+frontend/src/generated/
+frontend/public/research/
 .DS_Store
 coverage.xml
 .coverage
