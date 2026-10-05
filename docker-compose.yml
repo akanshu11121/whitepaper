@@ -1,0 +1,11 @@
+services:
+  research-lab:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      LAB_RUNS_DIR: /data/runs
+      LAB_TORCH_THREADS: 2
+    volumes: ["research_runs:/data/runs"]
+    restart: unless-stopped
+volumes:
+  research_runs:

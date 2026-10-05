@@ -1,0 +1,196 @@
+problem: "Sequence transduction maps a variable-length source into a target, e.g. translation. Recurrent training forces sequential computation; distant positions require long computational paths."
+motivation: "Allow parallel training across positions and short paths for long-range dependencies while preserving autoregressive output generation."
+contributions:
+  - "An attention-only encoder–decoder Transformer (§3)."
+  - "Scaled dot-product attention and multiple learned attention subspaces (§3.2)."
+  - "Sinusoidal positional signals plus established residual, normalization and feed-forward components."
+  - "Translation, parsing, and architecture-variation experiments (§6); empirical evidence, not a universal performance theorem."
+prior_work:
+  - "Bahdanau et al. (paper reference [2]): encoder–decoder additive attention."
+  - "ByteNet [18] and ConvS2S [9]: parallel convolutional transduction with longer dependency paths."
+  - "LSTM [13]/GRU [7] and GNMT [38]: sequence-aligned recurrent computation."
+  - "LayerNorm [1], residual networks [11], tied embeddings [30], Adam [20], label smoothing [36]: inherited building blocks."
+concepts:
+  - title: Scaled dot-product attention
+    section: §3.2.1 · Eq.1
+    source: src/research_lab/papers/attention/attention.py
+    explanations:
+      - "A toy asks nearby toys which ones can help. It listens more to helpful toys, then mixes their advice."
+      - "Each word chooses how much information to borrow from other words based on a compatibility score."
+      - "Queries ask a question, keys describe what can match it, and values contain the information. Softmax makes match scores into nonnegative weights summing to one."
+      - "Compute all query/key dot products, scale by square-root key width, apply a row-wise softmax, then multiply by values. It is a differentiable weighted lookup."
+      - "Attention(Q,K,V)=softmax(QKᵀ/√dₖ)V. For independent zero-mean unit-variance components, unscaled score variance is dₖ. Scaling avoids softmax saturation; full attention uses O(n²d) work and O(n²) score storage."
+      - "The variance argument depends on independence and marginal variance assumptions, which learned projections need not satisfy. Attention mixes values rather than certifying causal relevance. Dense all-pairs matching improves path length but can lose effective resolution and becomes expensive on long inputs."
+  - title: Multi-head attention
+    section: §3.2.2
+    source: src/research_lab/papers/attention/attention.py
+    explanations:
+      - "Several teams look for different clues, then put their answers together."
+      - "Different learned views can focus on different relationships at the same time."
+      - "Each head has its own query, key, and value projection. Heads run attention separately; their outputs are joined and projected back to the model width."
+      - "Split projected tensors into [batch,heads,length,head_width], perform batched attention, concatenate along the feature dimension, then apply Wᴼ."
+      - "headᵢ=Attention(QWᵢQ,KWᵢK,VWᵢV); MultiHead=Concat(head₁,…,headₕ)Wᴼ. Base uses h=8 and dₖ=dᵥ=64. Our equal-width heads preserve total projection width as h changes."
+      - "Different subspaces avoid forcing every relation into one averaged representation. Head identity is permutation-symmetric and specialization is not guaranteed. Table 3 finds both single and excessive heads worse in this experiment; this is not a theorem about all tasks. Independent dₖ/dᵥ Table 3(B) sweeps are not supported by this equal-width implementation."
+  - title: Position and embedding
+    section: §3.4–3.5
+    source: src/research_lab/papers/attention/model.py
+    explanations:
+      - "Give each toy a seat number so helpers know its place in line."
+      - "Words become vectors; position signals tell the model their order."
+      - "Token IDs look up learned vectors. Multiply embeddings by √d_model and add sinusoidal vectors with different frequencies before dropout."
+      - "Without positional signals, source self-attention is permutation-equivariant. Shared source/target/output embeddings use one joint vocabulary. Sinusoidal features let position shifts be represented as rotations in sine/cosine pairs."
+      - "PE(pos,2i)=sin(pos/10000^(2i/d)); PE(pos,2i+1)=cos(pos/10000^(2i/d)). A fixed offset is a linear transform within each frequency pair. Embedding scaling keeps token vectors competitive with O(1) positional features."
+      - "Representability of relative offsets does not prove that a learned model extrapolates to longer sequences. Absolute sinusoidal PE differs from later relative/rotary schemes. Tying reduces parameters but requires compatible vocabularies; the local joint whitespace vocabulary differs from original BPE/wordpieces."
+  - title: Encoder, feed-forward, residuals and normalization
+    section: §3.1 · §3.3
+    source: src/research_lab/papers/attention/model.py
+    explanations:
+      - "Helpers read all the toys, think about each one, and keep the useful old notes."
+      - "The encoder builds a context-aware description of every input position through several reading and processing stages."
+      - "Each layer uses self-attention followed by a two-layer ReLU feed-forward network. Residual connections add old features back; normalization stabilizes their scale."
+      - "The FFN uses the same weights at every position, but layers have distinct parameters. The paper is post-norm: LayerNorm(x+Dropout(Sublayer(x))). Padding keys are blocked from being read."
+      - "FFN(x)=max(0,xW₁+b₁)W₂+b₂ with d_ff=2048 in base. LayerNorm normalizes feature dimensions per position using learned gain/bias. No extra final normalization is inserted into this post-norm reference topology."
+      - "FFNs cost O(nd·d_ff), and attention projections cost O(nd²), so O(n²d) is the attention interaction term rather than full layer cost. Deep post-norm stacks can be hard to optimize; pre-norm is an experimental modification rather than a faithful silent replacement."
+  - title: Causal decoder and cross-attention
+    section: §3.1 · §3.2.3
+    source: src/research_lab/papers/attention/model.py
+    explanations:
+      - "When writing the next answer, peek only at the words already written and the input notes."
+      - "The decoder produces one output at a time, using the known prefix and encoded input."
+      - "Shift targets right with BOS. Causal self-attention blocks later positions. Cross-attention uses decoder queries and encoder keys/values."
+      - "Teacher forcing predicts target[i+1] from target[:i+1]. The triangular mask prevents future-token leakage even though all training positions are processed together. Source padding is also masked in cross-attention."
+      - "For autoregression p(y|x)=∏ₜ p(yₜ|y<t,x). Illegal logits are −∞ before softmax. Mask convention here is True=allowed; some PyTorch APIs use the opposite convention."
+      - "Parallel teacher forcing does not make free-running inference parallel. Exposure bias separates training prefixes from generated ones. Finished sequences retain EOS in batched decoding, and prefix recomputation is readable but more expensive than KV caching."
+  - title: Adam, learning-rate schedule and label smoothing
+    section: §5.3–5.4
+    source: src/research_lab/papers/attention/training.py
+    explanations:
+      - "Practice gently at first, then take smaller steps when the helpers improve. Don't insist every answer is perfectly certain."
+      - "Training adjusts weights using errors, a warmup schedule, and slightly softened targets to reduce overconfidence."
+      - "Adam uses gradient moments. The learning rate rises during warmup then falls. Label smoothing reserves some probability for incorrect classes; dropout removes random features while training."
+      - "Adam β₁=.9, β₂=.98, ε=1e−9; the paper uses smoothing .1 and base dropout .1. NLL/perplexity is computed without smoothing so it measures predictive probability of true targets."
+      - "lr=d_model^−.5·min(step^−.5,step·warmup^−1.5). Local smoothed targets are p_true=1−ε and ε/(V−2) on non-true/non-pad classes. Optimizer steps start at one. Gradient clipping and LR factor are explicit engineering choices."
+      - "Smoothing can worsen NLL/perplexity while improving BLEU; these objectives are not interchangeable. The exact historical smoothing distribution and initialization are absent from the paper. Fixed-sentence laptop batches differ from 25K-token multi-GPU batches and affect optimization trajectories."
+  - title: Autoregressive generation and evaluation
+    section: §6.1
+    source: src/research_lab/papers/attention/inference.py
+    explanations:
+      - "Try a few possible next words and keep the promising stories until the answer is finished."
+      - "Greedy decoding chooses the most likely next token; beam search keeps several possible prefixes."
+      - "Start at BOS, repeatedly decode, append a token, and stop at EOS or the length bound. Beam scores sum log probabilities with a length penalty."
+      - "Paper settings are beam=4 and alpha=.6; the lab also supports greedy decoding. Checkpoint averaging can smooth parameter variation. Exact match and token accuracy are relevant for algorithmic tasks; BLEU is used only for parallel text."
+      - "Beam score here is Σ log p / ((5+L)/6)^alpha. Completed beams are retained. Local metrics use held-out disjoint sources, teacher-forced unsmoothed NLL, and free-running generation. Corpus BLEU includes the SacreBLEU signature."
+      - "Beam search approximates search, not model correctness, and can change length bias. Greedy emitted-token confidence is not calibrated uncertainty. Historical tokenized BLEU is not automatically comparable to modern SacreBLEU; matching corpus and signature is required."
+equations:
+  - id: attention
+    title: Scaled dot-product attention
+    section: §3.2.1 · Eq.1
+    equation: "A = softmax(QKᵀ/√dₖ + M)V"
+    symbols: {Q: "queries [n_q,d_k]", K: "keys [n_k,d_k]", V: "values [n_k,d_v]", d_k: "key width", M: "0 for allowed and −∞ for blocked links (mask extension)"}
+    why: "Produce a differentiable, query-dependent mixture of value vectors."
+    inputs: "Projected queries, keys, values and a boolean allowed mask."
+    outputs: "Context [n_q,d_v] and diagnostic weights [n_q,n_k]."
+    intuition: "Find compatible keys, normalize scores, and borrow corresponding values."
+    example: "Q=[1,0], K=[[1,0],[0,1]], V=[[2,0],[0,4]]. Scores=[0.7071,0]; weights≈[0.6698,0.3302]; output≈[1.3395,1.3209]."
+    implementation: "q @ k.transpose(-2,-1) / sqrt(width); masked softmax; weights @ v"
+    assumptions: "Matching Q/K width; aligned key/value length; finite valid projections. Zero all-masked output is engineering behavior A7."
+    stability: "Stable softmax subtracts row maxima internally; prevent all −∞ rows before softmax. Overflow in QKᵀ can still occur for extreme inputs."
+    source: src/research_lab/papers/attention/attention.py
+  - id: multihead
+    title: Multi-head attention
+    section: §3.2.2
+    equation: "headᵢ=Attention(QWᵢQ,KWᵢK,VWᵢV); MultiHead=Concat(head₁,…,headₕ)Wᴼ"
+    symbols: {h: "head count", W_i: "learned per-head query/key/value projections", W_O: "output projection [h*d_v,d_model]"}
+    why: "Mix information through multiple learned representation subspaces."
+    inputs: "Source/target vectors and masks."
+    outputs: "Model-width contextual vectors."
+    intuition: "Several readers contribute complementary views."
+    example: "d_model=4,h=2: each head emits width 2; concatenate two outputs to width 4 before Wᴼ."
+    implementation: "project → view [B,L,H,D] → transpose → attention → concatenate → out"
+    assumptions: "This implementation uses d_k=d_v=d_model/h and bias-free projections."
+    stability: "All heads share stable softmax logic; optimized kernels may differ within floating-point tolerance."
+    source: src/research_lab/papers/attention/attention.py
+  - id: ffn
+    title: Position-wise feed-forward network
+    section: §3.3 · Eq.2
+    equation: "FFN(x)=max(0,xW₁+b₁)W₂+b₂"
+    symbols: {x: "one position's model-width features", W_1: "model→FFN projection", W_2: "FFN→model projection", b_1: "hidden bias", b_2: "output bias"}
+    why: "Nonlinear feature transformation after information mixing."
+    inputs: "Each contextual position vector independently."
+    outputs: "A model-width vector at every same position."
+    intuition: "Attention gathers information; FFN processes it locally."
+    example: "x=[1,-2], W₁=I,b₁=0,W₂=2I,b₂=0 gives [2,0]."
+    implementation: "Linear(d_model,d_ff) → ReLU → Linear(d_ff,d_model)"
+    assumptions: "Weights shared across positions, not across layers."
+    stability: "ReLU is piecewise linear; large activations need finite weights and normalization."
+    source: src/research_lab/papers/attention/model.py
+  - id: norm
+    title: Residual post-normalization
+    section: §3.1 · §5.4
+    equation: "z=x+Dropout(Sublayer(x)); y=γ(z−mean(z))/√(var(z)+ε)+β"
+    symbols: {gamma: "learned feature gain", beta: "learned feature bias", epsilon: "LayerNorm stabilizer 1e-5 (A1)"}
+    why: "Retain existing features and normalize sublayer output scale."
+    inputs: "Same-width input and sublayer output."
+    outputs: "Normalized model-width features."
+    intuition: "Keep old notes while incorporating the new information."
+    example: "z=[1,3],γ=1,β=0 gives approximately [-1,1]."
+    implementation: "LayerNorm(x + dropout(sublayer(x)))"
+    assumptions: "Normalize features per token; use population variance."
+    stability: "ε prevents zero-variance division. Post-norm ordering matches the paper."
+    source: src/research_lab/papers/attention/model.py
+  - id: positions
+    title: Scaled embedding plus positional encoding
+    section: §3.4–3.5
+    equation: "x=√d·E[token]+PE; PE(pos,2i)=sin(pos/10000^(2i/d)); PE(pos,2i+1)=cos(pos/10000^(2i/d))"
+    symbols: {E: "shared learned embedding matrix", d: "model width", pos: "zero-based position", i: "frequency pair index"}
+    why: "Represent token identity and sequence order without recurrence."
+    inputs: "Token ID and position."
+    outputs: "Model-width vector."
+    intuition: "Each position receives a distinctive set of waves."
+    example: "d=4,pos=1 → [sin(1),cos(1),sin(.01),cos(.01)] ≈ [.8415,.5403,.0100,.99995]."
+    implementation: "arange positions × exp(-log(10000) × even_dims/d); alternate sin/cos"
+    assumptions: "Fixed positional capacity for the runnable lab; joint source/target vocabulary."
+    stability: "Float32 sine/cosine at very large positions can lose precision; API bounds prevent excessive allocations."
+    source: src/research_lab/papers/attention/model.py
+  - id: schedule
+    title: Noam learning-rate schedule
+    section: §5.3 · Eq.3
+    equation: "lr=d^−0.5 · min(step^−0.5, step·warmup^−1.5)"
+    symbols: {d: "model width", step: "one-based update index", warmup: "linear warmup count, paper=4000"}
+    why: "Increase learning rate gradually before inverse-square-root decay."
+    inputs: "Step, width and warmup count."
+    outputs: "Scalar optimizer learning rate."
+    intuition: "Take bigger steps as training stabilizes, then reduce them."
+    example: "d=512,warmup=4000,step=4000 → lr≈0.00069877 (factor=1)."
+    implementation: "d**-.5 * min(step**-.5, step * warmup**-1.5)"
+    assumptions: "step≥1; optional factor is a local engineering control."
+    stability: "Reject zero step/warmup to avoid singular powers."
+    source: src/research_lab/papers/attention/training.py
+  - id: loss
+    title: Smoothed training objective and unsmoothed NLL
+    section: §5.4 · engineering distribution A3
+    equation: "L=−Σ_c p_smooth(c) log softmax(logits)_c; p_true=1−ε; p_other=ε/(V−2); p_pad=0"
+    symbols: {epsilon: "smoothing strength", V: "vocabulary size including pad", p_smooth: "target distribution"}
+    why: "Penalize overconfident predictions while ignoring padding targets."
+    inputs: "Logits, target IDs, smoothing strength."
+    outputs: "Mean loss over non-padding targets."
+    intuition: "Reserve a small amount of belief for other valid classes."
+    example: "V=6,ε=.1: true class .9; four non-true/non-pad alternatives .025 each; total=1."
+    implementation: "log_softmax → gather true class → mean alternative log-probabilities → ignore pad rows"
+    assumptions: "A3 distribution differs from uniform-over-all-classes smoothing."
+    stability: "log_softmax avoids log(softmax()) underflow. Evaluation perplexity uses unsmoothed NLL, not smoothed loss."
+    source: src/research_lab/papers/attention/training.py
+  - id: beam
+    title: Length-normalized beam search
+    section: §6.1 · GNMT-inspired normalization
+    equation: "score(y)=Σ_t log p(y_t|y<t,x) / ((5+L)/6)^α"
+    symbols: {L: "generated length including EOS, excluding BOS", alpha: "length penalty, paper=.6"}
+    why: "Compare candidate prefixes while reducing raw log-probability short-sequence bias."
+    inputs: "Candidate token sequence and per-step log probabilities."
+    outputs: "Scalar candidate rank."
+    intuition: "Keep several plausible answers rather than committing immediately."
+    example: "L=1 gives penalty=1; L=7,α=.6 gives penalty≈1.5157."
+    implementation: "retain completed beams; expand live candidates; rank bounded beams by normalized score"
+    assumptions: "Readable bounded search A6; no historical early-stopping equivalence claimed."
+    stability: "Sum log probabilities rather than multiplying probabilities."
+    source: src/research_lab/papers/attention/inference.py

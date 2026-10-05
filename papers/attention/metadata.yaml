@@ -1,0 +1,23 @@
+id: attention
+title: Attention Is All You Need
+authors:
+  - Ashish Vaswani
+  - Noam Shazeer
+  - Niki Parmar
+  - Jakob Uszkoreit
+  - Llion Jones
+  - Aidan N. Gomez
+  - Łukasz Kaiser
+  - Illia Polosukhin
+year: 2017
+venue: NeurIPS 2017
+arxiv: "1706.03762"
+official_url: https://arxiv.org/abs/1706.03762
+publication_url: https://papers.nips.cc/paper_files/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html
+official_implementation: https://github.com/tensorflow/tensor2tensor
+domain: NLP
+task: sequence transduction
+status: implemented-local-validation
+paper_license: arXiv.org perpetual non-exclusive license; see supplied source
+code_license: MIT
+dataset_policy: "WMT14, WSJ and related corpora are documented but not redistributed"

@@ -1,0 +1,13 @@
+papers:
+  - id: attention
+    title: Attention Is All You Need
+    authors: [Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, Illia Polosukhin]
+    year: 2017
+    domain: NLP
+    task: Sequence transduction
+    module: research_lab.papers.attention.module:AttentionModule
+    status: implemented-local-validation
+    datasets: [Synthetic copy/reversal, Local parallel text, WMT 2014 (documented)]
+    benchmarks: true
+    metadata: papers/attention/metadata.yaml
+    content: papers/attention/content.yaml
