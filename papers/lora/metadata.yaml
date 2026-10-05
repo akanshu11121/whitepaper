@@ -1,0 +1,23 @@
+id: lora
+title: "LoRA: Low-Rank Adaptation of Large Language Models"
+authors:
+  - Edward J. Hu
+  - Yelong Shen
+  - Phillip Wallis
+  - Zeyuan Allen-Zhu
+  - Yuanzhi Li
+  - Shean Wang
+  - Lu Wang
+  - Weizhu Chen
+year: 2022
+preprint_year: 2021
+venue: ICLR 2022
+arxiv: "2106.09685"
+official_url: https://arxiv.org/abs/2106.09685
+publication_url: https://openreview.net/forum?id=nZeVKeeFYf9
+official_implementation: https://github.com/microsoft/LoRA
+domain: NLP / parameter-efficient fine-tuning
+status: implemented-local-validation
+paper_license: arXiv.org perpetual non-exclusive license; see supplied source
+code_license: MIT for the official loralib repository
+dataset_policy: "GLUE, E2E NLG, DART, WebNLG, WikiSQL, MultiNLI and SAMSum are documented but not redistributed"

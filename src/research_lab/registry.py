@@ -8,7 +8,10 @@ import yaml
 from research_lab.runtime import ROOT
 
 REGISTRY = ROOT / "papers" / "registry.yaml"
-ALLOWLIST = {"research_lab.papers.attention.module:AttentionModule"}
+ALLOWLIST = {
+    "research_lab.papers.attention.module:AttentionModule",
+    "research_lab.papers.lora.module:LoRAModule",
+}
 
 
 def entries() -> list[dict[str, Any]]:

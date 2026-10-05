@@ -16,6 +16,10 @@
 7. Update the UI only through API contracts and add traceability rows for substantial
    paper claims.
 
+For adaptation papers, separate base-model weights from adapter artifacts, test
+gradient isolation and merge equivalence, and never present a synthetic adaptation
+score as a downstream language-model benchmark.
+
 Before submitting:
 
 ```bash

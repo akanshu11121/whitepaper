@@ -8,7 +8,10 @@ const frontend = fileURLToPath(new URL("../", import.meta.url));
 const root = path.resolve(frontend, "..");
 const registry = parse(await readFile(path.join(root, "papers/registry.yaml"), "utf8"));
 const papers = [];
-const sourceNames = ["attention", "model", "training", "inference", "runner", "baseline", "ablations", "benchmark"];
+const sourceNames = {
+  attention: ["attention", "model", "training", "inference", "runner", "baseline", "ablations", "benchmark"],
+  lora: ["config", "layers", "models", "runner", "module"],
+};
 
 for (const entry of registry.papers) {
   const metadata = parse(await readFile(path.join(root, entry.metadata), "utf8"));
@@ -23,9 +26,9 @@ for (const entry of registry.papers) {
     docs[name.toLowerCase()] = publicPath;
   }
   const source = {};
-  if (entry.id === "attention") {
-    for (const name of sourceNames) {
-      const sourcePath = `src/research_lab/papers/attention/${name}.py`;
+  if (sourceNames[entry.id]) {
+    for (const name of sourceNames[entry.id] ?? []) {
+      const sourcePath = `src/research_lab/papers/${entry.id}/${name}.py`;
       source[sourcePath] = await readFile(path.join(root, sourcePath), "utf8");
     }
   }
