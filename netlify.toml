@@ -1,0 +1,13 @@
+[build]
+  base = "frontend"
+  command = "npm install --include=dev && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: serve index.html for any unknown path
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
