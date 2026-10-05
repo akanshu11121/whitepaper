@@ -11,3 +11,15 @@ papers:
     benchmarks: true
     metadata: papers/attention/metadata.yaml
     content: papers/attention/content.yaml
+  - id: lora
+    title: "LoRA: Low-Rank Adaptation of Large Language Models"
+    authors: [Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen]
+    year: 2022
+    domain: Parameter-efficient fine-tuning
+    task: Low-rank model adaptation
+    module: research_lab.papers.lora.module:LoRAModule
+    status: implemented-local-validation
+    datasets: [Controlled low-rank regression, GLUE (documented), GPT-2 tasks (documented), GPT-3 tasks (documented)]
+    benchmarks: true
+    metadata: papers/lora/metadata.yaml
+    content: papers/lora/content.yaml

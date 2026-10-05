@@ -1,7 +1,8 @@
 # AI Research Implementation Lab
 
-An extensible, traceable paper-to-product workspace. The first module implements
-**Attention Is All You Need** (Vaswani et al., NeurIPS 2017) as a readable PyTorch
+An extensible, traceable paper-to-product workspace. The modules currently implement
+**Attention Is All You Need** (Vaswani et al., NeurIPS 2017) and **LoRA: Low-Rank
+Adaptation of Large Language Models** (Hu et al., ICLR 2022) as readable PyTorch
 reference implementation with scientific tests, local experiments, benchmarks,
 an API, and an interactive research UI.
 
@@ -45,6 +46,9 @@ open http://localhost:8000
 - Greedy and readable beam search, safetensors checkpoints, reproducibility metadata,
   attention capture, resource benchmark, GRU engineering baseline, and ablation presets.
 - Registry-driven FastAPI routes and responsive React research interface.
+- LoRA frozen-base low-rank adapters, merge/unmerge, adapter-only safetensors,
+  full/frozen baselines, controlled regression, rank/alpha ablations and merged
+  versus unmerged benchmarks.
 
 ## Scientific boundary
 

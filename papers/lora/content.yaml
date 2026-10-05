@@ -1,0 +1,130 @@
+problem: "Full fine-tuning creates a full-size task-specific model and optimizer state for every downstream task. For very large language models, storage, memory, deployment and task switching become expensive."
+motivation: "Represent the task-specific weight change in a small low-rank subspace while reusing a frozen pretrained model and avoiding extra inference depth after merging."
+contributions:
+  - "Low-Rank Adaptation reparameterizes a frozen weight update as B A and trains only the factors."
+  - "Alpha-over-rank scaling makes rank changes easier to tune."
+  - "Merged deployment eliminates additional adapter latency by construction."
+  - "Experiments study RoBERTa, DeBERTa, GPT-2, GPT-3, target matrices and update rank."
+prior_work:
+  - "Full fine-tuning of pretrained language models."
+  - "Adapter layers, which add depth and can add inference latency."
+  - "Prefix and prompt tuning, which use input-side trainable activations or tokens."
+  - "Intrinsic dimension and low-rank structure studies motivating the update-rank hypothesis."
+concepts:
+  - title: Frozen base plus a low-rank update
+    section: §4.1 · Eq.3
+    source: src/research_lab/papers/lora/layers.py
+    explanations:
+      - "Imagine a big machine that already knows how to move. Instead of rebuilding every gear, attach two small strips that gently nudge its movement."
+      - "LoRA keeps the original model fixed and stores a small task-specific adjustment rather than a second complete model."
+      - "A normal linear layer multiplies by W₀. LoRA adds two smaller matrices: first A compresses the input, then B expands the small signal back to the output."
+      - "The adapter path is x → dropout(x) → Aᵀ → Bᵀ, scaled by α/r, and added to the frozen base output. Its update rank is at most r."
+      - "For W₀∈R^(d×k), A∈R^(r×k), B∈R^(d×r), W=W₀+(α/r)BA. The trainable count is r(d+k), versus dk for full weight adaptation."
+      - "The low intrinsic-rank hypothesis is empirical, not a universal theorem. A rank-r factorization restricts the update subspace; target-module choice and task geometry determine whether that restriction is sufficient."
+  - title: Initialization and scaling
+    section: §4.1
+    source: src/research_lab/papers/lora/layers.py
+    explanations:
+      - "Start with the new nudge turned off, so the old machine behaves exactly as before."
+      - "One small matrix starts with random directions, while the other starts at zero. Their product is therefore zero at the beginning."
+      - "A random A provides possible directions; zero B makes the initial model equal to the pretrained model. Alpha divided by rank controls the update magnitude."
+      - "The forward path uses scale=α/r. This lets an experiment change rank without automatically changing the nominal update scale when α is chosen proportionally to r."
+      - "The paper specifies Gaussian A and zero B but leaves the exact Gaussian standard deviation to implementation context. This module exposes it as a configurable engineering assumption."
+      - "Zero B means gradients to A are initially zero on the first update while gradients to B can train; this is deliberate and preserves the initial function. Initialization standard deviation interacts with optimizer dynamics and should be reported."
+  - title: Merge and no additional inference latency
+    section: §4.1
+    source: src/research_lab/papers/lora/layers.py
+    explanations:
+      - "When the machine is ready, glue the small nudge onto the big gear so it works like one ordinary gear."
+      - "The adapter can be combined with the original matrix before serving, so the deployed layer does not need a second adapter computation."
+      - "Unmerged mode computes base output plus adapter output. Merged mode replaces W₀ with W₀+scale·BA and performs one normal linear operation."
+      - "Merge is algebraically exact up to floating-point rounding. Unmerge subtracts the same update and must be idempotent; explicit methods avoid hidden state changes during experiments."
+      - "The paper's latency claim is a construction claim for merged inference, while unmerged mode is useful for training and task switching. Separate adapters in one batch may require extra routing or separate batches."
+      - "Merge changes parameter storage in memory but not the mathematical function. In-place updates need careful dtype/device handling and must never be applied twice. Quantization, tied weights and sharding introduce additional production constraints."
+  - title: Parameter and optimizer savings
+    section: §4.1 · §4.2 · §5.1
+    source: src/research_lab/papers/lora/layers.py
+    explanations:
+      - "A giant book stays on the shelf, and each new subject needs only a small note card instead of another whole book."
+      - "The base model is shared across tasks; each task stores only its small adapter."
+      - "A d×k matrix has dk entries. A rank-r update has r×k plus d×r entries. The adapter fraction is r(d+k)/(dk)."
+      - "Freezing the base also avoids gradients and Adam states for those parameters. This can reduce memory substantially, although actual wall-clock and VRAM savings depend on framework, optimizer and hardware."
+      - "For query/value projections in L Transformer layers with width d, the paper gives approximately 2Ldr trainable parameters. The paper reports 0.01% trainable parameters in its GPT-3 example and up to 3× lower GPU memory."
+      - "Parameter savings are not equivalent to FLOP savings: the base matrix still performs its dense multiplication, and unmerged adapters add low-rank multiplications. Optimizer-state savings are strongest with adaptive optimizers."
+  - title: Where to apply LoRA
+    section: §4.2 · §7.1
+    source: src/research_lab/papers/lora/runner.py
+    explanations:
+      - "You can add small nudges to different gears. Some gears may matter more for the new job than others."
+      - "LoRA can wrap any dense layer, but the paper studies Transformer attention projections, commonly query and value."
+      - "Target selection is a budgeted design choice: q, k, v, o, MLP or embeddings can receive factors depending on architecture and task."
+      - "A single fused QKV matrix requires splitting or a masked/fused adapter implementation if q and v should be adapted independently."
+      - "The paper focuses on attention weights for parameter efficiency and studies which subsets work best. This module’s controlled regression wraps one linear projection; it does not claim a universal target ranking."
+      - "Target matrices are an experimental variable, not merely an implementation detail. A fixed parameter budget can favor adapting more matrices at lower rank or fewer matrices at higher rank; performance must be measured on the task."
+  - title: Baselines and adaptation objective
+    section: §2 · §5.1
+    source: src/research_lab/papers/lora/runner.py
+    explanations:
+      - "Compare keeping the old machine, rebuilding every gear, and adding only two small strips."
+      - "A fair comparison keeps data, starting weights, optimizer budget and evaluation split the same."
+      - "Full fine-tuning updates every base weight. A frozen baseline updates none. LoRA updates only A/B."
+      - "The paper’s language-model objective maximizes conditional log likelihood. The local regression task uses MSE because it makes the target low-rank update directly observable."
+      - "The local objective is a mechanism validation, not a proxy for GLUE or generation quality. Paper tables are recorded as author results and not mixed into local metrics."
+      - "A baseline can be scientifically misleading if its initialization, budget or data differs. The runner persists the common base and dataset fingerprint so comparisons can be audited."
+equations:
+  - id: lora-update
+    title: Low-rank reparameterization
+    section: §4.1 · Eq.3
+    equation: "W = W₀ + (α/r)BA; h = W₀x + (α/r)BAx"
+    symbols: {W_0: "frozen pretrained weight [d,k]", A: "trainable down projection [r,k]", B: "trainable up projection [d,r]", r: "rank", alpha: "constant scaling hyperparameter", x: "input vector"}
+    why: "Encode the task-specific dense update with far fewer parameters."
+    inputs: "Frozen W₀, trainable A/B, input x, rank r and alpha."
+    outputs: "The adapted linear output h."
+    intuition: "Compress the input into r coordinates, transform them, and expand them back."
+    example: "d=3,k=4,r=1 has 12 base parameters but 7 adapter parameters: A has 4 and B has 3."
+    implementation: "F.linear(x,W₀,bias) + scale * F.linear(F.linear(dropout(x), A), B)"
+    assumptions: "r≤min(d,k); base weight is frozen; A/B shapes align; bias policy is explicit."
+    stability: "Use matrix multiplications in the model dtype; merge in-place only once; compare merged/unmerged within dtype tolerance."
+    source: src/research_lab/papers/lora/layers.py
+  - id: scaling
+    title: Rank scaling
+    section: §4.1
+    equation: "scale = α/r"
+    symbols: {alpha: "constant scale", r: "adapter rank"}
+    why: "Keep update magnitude comparable when rank changes."
+    inputs: "Alpha and positive integer rank."
+    outputs: "Scalar adapter multiplier."
+    intuition: "More low-rank directions should not automatically mean a proportionally larger update."
+    example: "r=4, α=8 gives scale=2."
+    implementation: "self.scaling = alpha / rank"
+    assumptions: "Alpha is configurable; paper often sets alpha to the first tested rank."
+    stability: "Reject rank zero for an active adapter and avoid division by zero."
+    source: src/research_lab/papers/lora/layers.py
+  - id: params
+    title: Trainable parameter count
+    section: §5.1
+    equation: "N_LoRA = r(d+k); fraction = r(d+k)/(dk)"
+    symbols: {d: "output dimension", k: "input dimension", r: "rank"}
+    why: "Quantify adapter storage and trainable-state savings."
+    inputs: "Linear dimensions and rank."
+    outputs: "Adapter count and fraction of one adapted matrix."
+    intuition: "Two thin rectangles replace one large rectangle."
+    example: "d=k=1024,r=8 → 16,384 adapter parameters versus 1,048,576 full parameters (1.5625%)."
+    implementation: "parameter_report(model) counts requires_grad and LoRA factors."
+    assumptions: "Counts exclude optimizer states, shared weights and framework metadata."
+    stability: "Report bytes for the chosen dtype separately from optimizer memory."
+    source: src/research_lab/papers/lora/layers.py
+  - id: merge
+    title: Merged deployment
+    section: §4.1
+    equation: "W_merged = W₀ + (α/r)BA"
+    symbols: {W_merged: "ordinary served weight", W_0: "frozen base weight", A: "down factor", B: "up factor"}
+    why: "Remove the separate adapter path during latency-sensitive inference."
+    inputs: "Base weight, adapter factors and scale."
+    outputs: "An ordinary linear layer with the adapted function."
+    intuition: "Physically combine the small correction into the original matrix."
+    example: "If W₀=[[1,0]], BA=[[0,2]] and scale=.5, merged W=[[1,1]]."
+    implementation: "weight.add_(scaling * lora_B @ lora_A); reverse with sub_"
+    assumptions: "The module is not merged already; no external references depend on immutable weight storage."
+    stability: "Perform merge once; use max absolute output difference as the equivalence check."
+    source: src/research_lab/papers/lora/layers.py

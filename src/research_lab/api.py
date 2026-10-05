@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from research_lab.artifacts import ArtifactStore
 from research_lab.config import BenchmarkConfig, ExperimentConfig
+from research_lab.papers.lora.config import LoraBenchmarkConfig, LoraExperimentConfig
 from research_lab.registry import entries, module
 
 app = FastAPI(title="AI Research Implementation Lab", version="0.1.0")
@@ -110,25 +111,39 @@ def limitations(paper_id: str) -> list[str]:
     return get_module(paper_id).get_limitations()
 
 
-def execute(run_id: str, config: ExperimentConfig) -> None:
+def parse_experiment_config(paper_id: str, payload: dict[str, Any]) -> ExperimentConfig | LoraExperimentConfig:
+    try:
+        if paper_id == "attention":
+            return ExperimentConfig.model_validate(payload)
+        if paper_id == "lora":
+            return LoraExperimentConfig.model_validate(payload)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    raise HTTPException(404, "paper does not support this experiment")
+
+
+def execute(paper_id: str, run_id: str, config: ExperimentConfig | LoraExperimentConfig) -> None:
     try:
         store.update(run_id, status="running")
-        get_module("attention").run_experiment(config, run_id)
+        get_module(paper_id).run_experiment(config, run_id)
     except Exception as exc:  # persisted status is safe; detail is server-side only
         store.update(run_id, status="failed", error_type=type(exc).__name__)
 
 
 @app.post("/api/papers/{paper_id}/experiment", status_code=202)
-def experiment(paper_id: str, config: ExperimentConfig) -> dict[str, Any]:
-    if paper_id != "attention":
-        raise HTTPException(404, "paper does not support experiments")
+def experiment(paper_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    config = parse_experiment_config(paper_id, payload)
     run_id = store.create(paper_id, "experiment", config.model_dump())
-    executor.submit(execute, run_id, config)
+    executor.submit(execute, paper_id, run_id, config)
     return {"run_id": run_id, "status": "queued"}
 
 
 @app.post("/api/papers/{paper_id}/benchmark")
-def run_benchmark(paper_id: str, config: BenchmarkConfig) -> dict[str, Any]:
+def run_benchmark(paper_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        config: BenchmarkConfig | LoraBenchmarkConfig = BenchmarkConfig.model_validate(payload) if paper_id == "attention" else LoraBenchmarkConfig.model_validate(payload)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return get_module(paper_id).benchmark(config)
 
 
@@ -152,11 +167,12 @@ def result(paper_id: str, run_id: str) -> dict[str, Any]:
 
 @app.post("/api/papers/{paper_id}/predict")
 def predict(paper_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if paper_id != "attention":
-        raise HTTPException(404, "paper does not support prediction")
-    run_id, text = payload.get("run_id"), payload.get("text")
+    run_id = payload.get("run_id")
+    text = payload.get("text", payload.get("input"))
+    if isinstance(text, list):
+        text = " ".join(str(value) for value in text)
     if not isinstance(run_id, str) or not isinstance(text, str):
-        raise HTTPException(422, "run_id and text are required")
+        raise HTTPException(422, "run_id and text/input are required")
     try:
         run = store.read(run_id)
         if run.get("status") != "completed":

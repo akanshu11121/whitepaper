@@ -1,5 +1,6 @@
 import catalog from "./generated/catalog.json";
 import { browserBenchmark, browserExperiment, browserPredict, browserRun } from "./lab/browser";
+import { browserLoraBenchmark, browserLoraPredict, browserLoraRun, browserLoraRunStatus } from "./lab/lora";
 import type { Benchmark, Equation, ExperimentConfig, Explanation, Inspection, Paper, Run } from "./types";
 
 const configuredApi = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "");
@@ -8,7 +9,7 @@ if (mode && !["api", "browser", "auto"].includes(mode)) throw new Error("VITE_LA
 export const API_MODE = mode === "api" || (mode !== "browser" && Boolean(configuredApi));
 const API = configuredApi || "/api";
 const papers = catalog as unknown as (Paper & {
-  content: { concepts: { title: string; explanations: string[]; section: string; source: string }[]; equations: Equation[] };
+  content: { problem?: string; motivation?: string; concepts: { title: string; explanations: string[]; section: string; source: string }[]; equations: Equation[] };
   docs: Record<string, string>; source: Record<string, string>;
 })[];
 
@@ -42,19 +43,25 @@ export async function get<T>(path: string): Promise<T> {
     if (level > 5) throw new Error("Explanation level must be between 0 and 5.");
     return staticPaper(explanation[1]).content.concepts.map(concept => ({ title: concept.title, body: concept.explanations[level], source: concept.source, section: concept.section } satisfies Explanation)) as T;
   }
-  const run = path.match(/^\/papers\/attention\/results\/([^/]+)$/);
-  if (run) return (API_MODE ? await request<Run>(path) : browserRun(run[1])) as T;
+  const run = path.match(/^\/papers\/(attention|lora)\/results\/([^/]+)$/);
+  if (run) return (API_MODE ? await request<Run>(path) : (run[1] === "lora" ? browserLoraRunStatus(run[2]) : browserRun(run[2]))) as T;
   throw new Error(`Unsupported route: ${path}`);
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {
   if (API_MODE) return request<T>(path, body);
   if (path === "/papers/attention/experiment") return browserExperiment(body as ExperimentConfig) as T;
+  if (path === "/papers/lora/experiment") return browserLoraRun(body as never) as T;
   if (path === "/papers/attention/predict") {
     const payload = body as { run_id: string; text: string };
     return browserPredict(payload.run_id, payload.text) as T;
   }
+  if (path === "/papers/lora/predict") {
+    const payload = body as { run_id: string; text: string };
+    return browserLoraPredict(payload.run_id, payload.text) as T;
+  }
   if (path === "/papers/attention/benchmark") return await browserBenchmark() as T;
+  if (path === "/papers/lora/benchmark") return await browserLoraBenchmark() as T;
   throw new Error(`Unsupported browser operation: ${path}`);
 }
 

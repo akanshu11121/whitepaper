@@ -28,6 +28,7 @@ export type Inspection = {
   source_labels: string[]; target_labels: string[]; confidence_note: string;
   terminated_with_eos: boolean; unknown_tokens?: string[]; note?: string;
 };
+export type LoraPrediction = { input: number[]; output: number[]; merged_output: number[]; update_matrix: number[][]; max_merge_difference: number; note: string };
 export type Benchmark = {
   runtime: string; paths: Record<string, { latency_ms: { p50: number; p95: number; mean: number };
   throughput_sequences_per_second: number }>; max_absolute_difference?: number;
